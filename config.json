@@ -1,0 +1,30 @@
+{
+    "min_cnn_layers": 1,
+    "max_cnn_layers": 20,
+    "min_fc_layers": 0,
+    "max_fc_layers": 4,
+    "layers": ["conv", "maxpool", "avgpool", "fc", "batchnorm", "dropout"],
+    "transitions": {
+        "conv": [5, 1, 1, 0, 1, 1],
+        "maxpool": [1, 0, 0, 0, 0, 0],
+        "avgpool": [1, 0, 0, 0, 0, 0],
+        "fc": [0, 0, 0, 3, 0, 1],
+        "batchnorm": [3, 1, 1, 0, 0, 1],
+        "dropout": [3, 1, 1, 0, 0, 0]
+    },
+    "config": {
+        "conv": {
+            "filters": [16, 32, 64, 128, 256],
+            "kernel_size": [1, 3, 5, 7]
+        },
+        "maxpool": {},
+        "avgpool": {},
+        "fc": {
+            "units": [16, 32, 64, 128]
+        },
+        "batchnorm": {},
+        "dropout": {
+            "rate": [0.3, 0.4, 0.5]
+        }
+    }
+}
