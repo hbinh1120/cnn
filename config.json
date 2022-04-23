@@ -5,11 +5,11 @@
     "max_fc_layers": 4,
     "layers": ["conv", "maxpool", "avgpool", "fc", "batchnorm", "dropout"],
     "transitions": {
-        "conv": [5, 1, 1, 0, 1, 1],
+        "conv": [5, 1, 1, 0, 1, 0],
         "maxpool": [1, 0, 0, 0, 0, 0],
         "avgpool": [1, 0, 0, 0, 0, 0],
-        "fc": [0, 0, 0, 3, 0, 1],
-        "batchnorm": [3, 1, 1, 0, 0, 1],
+        "fc": [0, 0, 0, 3, 0, 0],
+        "batchnorm": [3, 1, 1, 0, 0, 0],
         "dropout": [3, 1, 1, 0, 0, 0]
     },
     "config": {

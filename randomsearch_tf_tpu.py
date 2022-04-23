@@ -61,7 +61,7 @@ class Model:
 
     def fit(self, x, y, tpu_strategy, iters=300, epochs=100, batch_size=1024, min_delta=0, patience=5):
         for i in range(iters):
-            print("MODEL {:2d}".format(i + 1), end=" ")
+            print("MODEL {}".format(i + 1), end=" ")
             self.initialize()
             model = self.compile(tpu_strategy)
             earlystop = tf.keras.callbacks.EarlyStopping(monitor='val_loss', min_delta=min_delta, patience=patience, restore_best_weights=True)
@@ -77,7 +77,7 @@ class Model:
             if val_loss < self.best_loss:
                 self.best_loss = val_loss
                 print("New best model found")
-                self.save_best()
+                self.save_best(i)
                 model.save('best.h5')
 
 if __name__ == '__main__':
