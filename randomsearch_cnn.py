@@ -9,8 +9,8 @@ class Model:
         self.cnn_layers = [] #both convolution layers and pooling layers
         self.fc_layers = [] #dense layers
 
-    def initialize(self, initializer=initializers.sequential):
-        self.cnn_layers, self.fc_layers = initializer()
+    def initialize(self, initializer=initializers.Initializers()):
+        self.cnn_layers, self.fc_layers = initializer.sequential()
 
     def save_best(self, model_num):
         if not os.path.exists('save'):
