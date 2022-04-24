@@ -12,7 +12,7 @@ class Model:
     def initialize(self, initializer=initializers.sequential):
         self.cnn_layers, self.fc_layers = initializer()
 
-    def save_best(self, model):
+    def save_best(self, model_num):
         if not os.path.exists('save'):
             os.makedirs('save')
         with open('save/best.txt', 'w') as f:
@@ -20,7 +20,7 @@ class Model:
             f.write(json.dumps(self.fc_layers) + '\n')
 
         with open('save/log.txt', 'a') as f:
-            f.write(str(model) + ' ' + str(self.best_loss) + '\n')
+            f.write(str(model_num) + ' ' + str(self.best_loss) + '\n')
 
     def compile(self, tpu_strategy):
         #returns tf.keras.models.Sequential object

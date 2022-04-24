@@ -18,14 +18,14 @@ class ParticleSwarm:
             particle.initialize()
             self.particles.append(particle)
 
-    def save_g_best(self, iter, particle):
+    def save_g_best(self, model_num):
         if not os.path.exists('save'):
             os.makedirs('save')
         with open('save/g_best.txt', 'w') as f:
             f.write(json.dumps(self.g_best.cnn_layers) + '\n')
             f.write(json.dumps(self.g_best.fc_layers) + '\n')
         with open('save/log.txt', 'a') as f:
-            f.write(str(iter) + ' ' + str(particle) + ' ' + str(self.g_best_loss) + '\n')
+            f.write(str(model_num) + ' ' + str(self.g_best_loss) + '\n')
 
     def load(self):
         if os.path.exists('save'):
@@ -36,7 +36,7 @@ class ParticleSwarm:
                     particle.fc_layers = json.loads(f.readline())
                     self.particles.append(particle)
 
-    def fit(self, x, y, tpu_strategy, w=.6, cg=.4, load=False, num_particles=15, iters=20, epochs=100, min_delta=0, patience=5):
+    def fit(self, x, y, tpu_strategy, w=.6, cg=.4, load=False, num_particles=10, iters=40, epochs=100, min_delta=0, patience=5):
         if load:
             self.load()
         else:
@@ -63,7 +63,7 @@ class ParticleSwarm:
                     self.g_best = particle.copy()
                     self.g_best_loss = loss
                     print("New best model found")
-                    self.save_g_best(i, j + 1)
+                    self.save_g_best(i * num_particles + j + 1)
                     model.save('g_best.h5')
 
             #print gbest at the end of each iteration
