@@ -3,7 +3,7 @@ import random
 import copy
 import json
 import os
-import initializers
+from initializers import Initializers
 
 class ParticleSwarm:
     def __init__(self) -> None:
@@ -13,9 +13,10 @@ class ParticleSwarm:
         self.particles = []
 
     def add_particles(self, num_particles):
+        initializer = Initializers()
         for _ in range(num_particles):
             particle = Particle()
-            particle.initialize()
+            particle.initialize(initializer)
             self.particles.append(particle)
 
     def save_g_best(self, model_num):
@@ -81,7 +82,7 @@ class Particle:
         self.cnn_layers = [] #both convolution layers and pooling layers
         self.fc_layers = [] #dense layers
 
-    def initialize(self, initializer=initializers.Initializers()):
+    def initialize(self, initializer=Initializers()):
         self.cnn_layers, self.fc_layers = initializer.sequential()
 
     def save(self, filename):
