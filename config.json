@@ -3,7 +3,13 @@
     "max_cnn_layers": 20,
     "min_fc_layers": 0,
     "max_fc_layers": 4,
+    "min_nodes_in_cell": 3,
+    "max_nodes_in_cell": 8,
+
     "layers": ["conv", "maxpool", "avgpool", "fc", "batchnorm", "dropout"],
+    "operations": ["conv", "maxpool", "avgpool", "none"],
+    "combine_methods": ["add", "concatenate"],
+
     "transitions": {
         "conv": [5, 1, 1, 0, 1, 0],
         "maxpool": [1, 0, 0, 0, 0, 0],
@@ -12,6 +18,7 @@
         "batchnorm": [3, 1, 1, 0, 0, 0],
         "dropout": [3, 1, 1, 0, 0, 0]
     },
+
     "config": {
         "conv": {
             "filters": [16, 32, 64, 128, 256],
@@ -25,6 +32,7 @@
         "batchnorm": {},
         "dropout": {
             "rate": [0.3, 0.4, 0.5]
-        }
+        },
+        "none": {}
     }
 }
