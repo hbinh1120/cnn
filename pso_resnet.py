@@ -95,19 +95,19 @@ class Particle:
             inputs = tf.keras.Input(shape=(None, None, 3))
             graph.append(inputs)
             graph.append(inputs)
+            used_nodes = []
             for node in self.nodes:
-                if node is None:
-                    continue
                 node_outputs = []
                 for i in range(len(node['inputs'])):
+                    used_nodes.append(node['inputs'][i])
                     if node['operations'][i]['type'] == 'conv':
-                        node_outputs.append(tf.keras.layers.Conv2D(node['operations'][i]['filters'], node['operations'][i]['kernel_size'], padding='same', activation='relu')(graph[node['inputs'][i]]))
+                        node_outputs.append(tf.keras.layers.Conv2D(node['operations'][i]['filters'], node['operations'][i]['kernel_size'], padding='same', activation='relu')(graph[node['inputs'][i] + 2]))
                     elif node['operations'][i]['type'] == 'maxpool':
-                        node_outputs.append(tf.keras.layers.MaxPooling2D(padding='same')(graph[node['inputs'][i]]))
+                        node_outputs.append(tf.keras.layers.MaxPooling2D(padding='same')(graph[node['inputs'][i] + 2]))
                     elif node['operations'][i]['type'] == 'avgpool':
-                        node_outputs.append(tf.keras.layers.AveragePooling2D(padding='same')(graph[node['inputs'][i]]))
+                        node_outputs.append(tf.keras.layers.AveragePooling2D(padding='same')(graph[node['inputs'][i] + 2]))
                     elif node['operations'][i]['type'] == 'none':
-                        node_outputs.append(graph[node['inputs'][i]])
+                        node_outputs.append(graph[node['inputs'][i] + 2])
                 
                 #get largest dimensions
                 max_channel = 0
@@ -125,6 +125,13 @@ class Particle:
                     graph.append(tf.keras.layers.Add()(node_outputs))
                 elif node['combine_method'] == 'concatenate':
                     graph.append(tf.keras.layers.Concatenate()(node_outputs))
+
+            #point all nodes that dont have an output to the output node
+            nodes_to_outputs = []
+            for i, node in enumerate(graph):
+                if i not in used_nodes:
+                    nodes_to_outputs.append(node)
+            outputs = tf.keras.layers.Concatenate()(nodes_to_outputs)
 
             #global pooling instead of flatten to work with variable input size
             outputs = tf.keras.layers.GlobalAveragePooling2D()(graph[-1])
@@ -148,34 +155,14 @@ class Particle:
                 else:
                     if i < len(self.p_best.nodes):
                         new_nodes.append(self.p_best.nodes[i])
-        for i, node in enumerate(new_nodes[:-1]):
-            if node is not None:
-                node['inputs'] = node['inputs'][:2]
-                node['operations'] = node['operations'][:2]
-                for j, input in enumerate(node['inputs']):
-                    if input >= i:
-                        node['inputs'][j] = random.choice(list(range(j)))
-        unused_nodes = list(range(len(new_nodes) - 1))
-        for node in new_nodes[:-1]:
-            if node is not None:
-                for input in node['inputs']:
-                    try:
-                        unused_nodes.remove(input)
-                    except:
-                        pass
+        for i, node in enumerate(new_nodes):
+            node['inputs'] = node['inputs'][:2]
+            node['operations'] = node['operations'][:2]
+            for j, input in enumerate(node['inputs']):
+                if input >= i:
+                    node['inputs'][j] = random.choice(list(range(-2, j)))
 
-        new_nodes[-1] = {}
-        new_nodes[-1]['inputs'] = []
-        new_nodes[-1]['operations'] = []
-        new_nodes[-1]['combine_method'] = 'concatenate'
-        for i in unused_nodes:
-            op = {}
-            type = random.choice(self.initializer.config['operations'])
-            op['type'] = type
-            for key in self.initializer.config['config'][type]:
-                op[key] = random.choice(self.initializer.config['config'][type][key])
-            new_nodes[-1]['inputs'].append(i)
-            new_nodes[-1]['operations'].append(op)
+
         self.nodes = new_nodes
 
 

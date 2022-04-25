@@ -3,8 +3,8 @@
     "max_cnn_layers": 20,
     "min_fc_layers": 0,
     "max_fc_layers": 4,
-    "min_nodes_in_cell": 3,
-    "max_nodes_in_cell": 8,
+    "min_nodes_in_cell": 5,
+    "max_nodes_in_cell": 5,
 
     "layers": ["conv", "maxpool", "avgpool", "fc", "batchnorm", "dropout"],
     "operations": ["conv", "none"],

@@ -49,11 +49,10 @@ class Initializers:
         '''
         import random
         num_nodes = random.randint(self.config['min_nodes_in_cell'], self.config['max_nodes_in_cell'])
-        nodes = [None, None]
-        unused_nodes = list(range(num_nodes - 1))
+        nodes = []
 
         #each node takes 2 of previous nodes as inputs
-        for i in range(2, num_nodes - 1):
+        for i in range(num_nodes):
             operations = []
             for _ in range(2):
                 op = {}
@@ -64,31 +63,9 @@ class Initializers:
                 operations.append(op)
 
             node = {}
-            node['inputs'] = random.choices(list(range(i)), k=2)
+            node['inputs'] = random.choices(list(range(-2, i)), k=2)
             node['operations'] = operations
             node['combine_method'] = random.choice(self.config['combine_methods'])
-            try:
-                unused_nodes.remove(node['inputs'][0])
-            except:
-                pass
-            try:
-                unused_nodes.remove(node['inputs'][1])
-            except:
-                pass
             nodes.append(node)
-
-        #nodes that arent linked to the last node are added as inputs to the last node
-        nodes.append({})
-        nodes[-1]['inputs'] = []
-        nodes[-1]['operations'] = []
-        nodes[-1]['combine_method'] = 'concatenate'
-        for i in unused_nodes:
-            op = {}
-            type = random.choice(self.config['operations'])
-            op['type'] = type
-            for key in self.config['config'][type]:
-                op[key] = random.choice(self.config['config'][type][key])
-            nodes[-1]['inputs'].append(i)
-            nodes[-1]['operations'].append(op)
 
         return nodes
