@@ -66,7 +66,7 @@ class Model:
             outputs = tf.keras.layers.Concatenate()(nodes_to_outputs)
 
             #global pooling instead of flatten to work with variable input size
-            outputs = tf.keras.layers.GlobalAveragePooling2D()(graph[-1])
+            outputs = tf.keras.layers.GlobalAveragePooling2D()(outputs)
             #output layer, 10 outputs
             outputs = tf.keras.layers.Dense(10, activation='softmax')(outputs)
 
