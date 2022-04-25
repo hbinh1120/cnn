@@ -35,7 +35,7 @@ class Model:
                     if node['operations'][i]['type'] == 'conv':
                         output = tf.keras.layers.Conv2D(node['operations'][i]['filters'], node['operations'][i]['kernel_size'], padding='same')(graph[node['inputs'][i] + 2])
                         output = tf.keras.layers.BatchNormalization()(output)
-                        output = tf.keras.layers.Activation(tf.keras.activations.relu)
+                        output = tf.keras.layers.Activation(tf.keras.activations.relu)(output)
                         node_outputs.append(output)
                     elif node['operations'][i]['type'] == 'maxpool':
                         node_outputs.append(tf.keras.layers.MaxPooling2D(padding='same')(graph[node['inputs'][i] + 2]))
