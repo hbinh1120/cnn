@@ -9,7 +9,6 @@ class ParticleSwarm:
     def __init__(self) -> None:
         self.g_best = None
         self.g_best_loss = float('inf')
-        self.g_best_accuracy = 0
         self.particles = []
 
     def add_particles(self, num_particles):
@@ -23,8 +22,7 @@ class ParticleSwarm:
         if not os.path.exists('save'):
             os.makedirs('save')
         with open('save/g_best.txt', 'w') as f:
-            f.write(json.dumps(self.g_best.cnn_layers) + '\n')
-            f.write(json.dumps(self.g_best.fc_layers) + '\n')
+            f.write(json.dumps(self.g_best.nodes) + '\n')
         with open('save/log.txt', 'a') as f:
             f.write(str(model_num) + ' ' + str(self.g_best_loss) + '\n')
 
@@ -33,8 +31,7 @@ class ParticleSwarm:
             for filename in os.listdir('save'):
                 with open(os.path.join('save/', filename), 'r') as f:
                     particle = Particle()
-                    particle.cnn_layers = json.loads(f.readline())
-                    particle.fc_layers = json.loads(f.readline())
+                    particle.nodes = json.loads(f.readline())
                     self.particles.append(particle)
 
     def fit(self, x, y, tpu_strategy, w=.6, cg=.4, load=False, num_particles=10, iters=40, epochs=100, min_delta=0, patience=5):
@@ -49,7 +46,7 @@ class ParticleSwarm:
             #train all particles and update g_best
             for j, particle in enumerate(self.particles):
                 print("PARTICLE {:2d}".format(j + 1), end=" ")
-                if self.g_best is not None and self.g_best.fc_layers == particle.fc_layers and self.g_best.cnn_layers == particle.cnn_layers:
+                if self.g_best is not None and self.g_best.nodes == particle.nodes:
                     print("- particle is same as g_best and p_best")
                     particle.p_best = particle.copy()
                     particle.p_best_loss = self.g_best_loss
@@ -79,98 +76,113 @@ class Particle:
         self.p_best = self
         self.p_best_loss = float('inf')
 
-        self.cnn_layers = [] #both convolution layers and pooling layers
-        self.fc_layers = [] #dense layers
+        self.nodes = []
 
     def initialize(self, initializer=Initializers()):
         self.initializer = initializer
-        self.cnn_layers, self.fc_layers = self.initializer.sequential()
+        self.nodes = self.initializer.cell()
 
     def save(self, filename):
         if not os.path.exists('save'):
             os.makedirs('save')
         with open('save/' + filename, 'w') as f:
-            f.write(json.dumps(self.cnn_layers) + '\n')
-            f.write(json.dumps(self.fc_layers) + '\n')
+            f.write(json.dumps(self.nodes) + '\n')
 
     def compile(self, tpu_strategy):
-        #returns tf.keras.models.Sequential object
-        layers = []
-
-        #CNN layers, first layer is always convolution
-        layers.append(tf.keras.layers.Conv2D(self.cnn_layers[0]['filters'], self.cnn_layers[0]['kernel_size'], padding='same', activation='relu', input_shape=(None, None, 3)))
-
-        for layer in self.cnn_layers[1:]:
-            if layer['type'] == 'dropout':
-                layers.append(tf.keras.layers.Dropout(layer['rate']))
-            elif layer['type'] == 'batchnorm':
-                layers.append(tf.keras.layers.BatchNormalization())
-            elif layer['type'] == 'conv':
-                layers.append(tf.keras.layers.Conv2D(layer['filters'], layer['kernel_size'], padding='same', activation='relu'))
-            elif layer['type'] == 'maxpool':
-                layers.append(tf.keras.layers.MaxPooling2D(padding='same'))
-            elif layer['type'] == 'avgpool':
-                layers.append(tf.keras.layers.AveragePooling2D(padding='same'))
-
-        #FC layers, global pooling instead of flatten to work with variable input size
-        layers.append(tf.keras.layers.GlobalAveragePooling2D())
-        for layer in self.fc_layers:
-            if layer['type'] == 'dropout':
-                layers.append(tf.keras.layers.Dropout(layer['rate']))
-            elif layer['type'] == 'batchnorm':
-                layers.append(tf.keras.layers.BatchNormalization())
-            elif layer['type'] == 'fc':
-                layers.append(tf.keras.layers.Dense(layer['units'], activation='relu'))
-
-        #output layer, 10 outputs
-        layers.append(tf.keras.layers.Dense(10, activation='softmax'))
-
+        #returns a tf model
         with tpu_strategy.scope():
-            model = tf.keras.models.Sequential(layers)
+            graph = []
+            inputs = tf.keras.Input(shape=(None, None, 3))
+            graph.append(inputs)
+            graph.append(inputs)
+            for node in self.nodes:
+                if node is None:
+                    continue
+                node_outputs = []
+                for i in range(len(node['inputs'])):
+                    if node['operations'][i]['type'] == 'conv':
+                        node_outputs.append(tf.keras.layers.Conv2D(node['operations'][i]['filters'], node['operations'][i]['kernel_size'], padding='same', activation='relu')(graph[node['inputs'][i]]))
+                    elif node['operations'][i]['type'] == 'maxpool':
+                        node_outputs.append(tf.keras.layers.MaxPooling2D(padding='same')(graph[node['inputs'][i]]))
+                    elif node['operations'][i]['type'] == 'avgpool':
+                        node_outputs.append(tf.keras.layers.AveragePooling2D(padding='same')(graph[node['inputs'][i]]))
+                    elif node['operations'][i]['type'] == 'none':
+                        node_outputs.append(graph[node['inputs'][i]])
+                
+                #get largest dimensions
+                max_channel = 0
+                for output in node_outputs:
+                    dimensions = output.shape.as_list()
+                    if dimensions[3] > max_channel:
+                        max_channel = dimensions[3]
+
+                #resize all outputs to largest dimensions
+                for i, output in enumerate(node_outputs):
+                    node_outputs[i] = tf.keras.layers.Conv2D(max_channel, 1, padding='same', activation='relu')(output)
+
+                #combine all outputs
+                if node['combine_method'] == 'add':
+                    graph.append(tf.keras.layers.Add()(node_outputs))
+                elif node['combine_method'] == 'concatenate':
+                    graph.append(tf.keras.layers.Concatenate()(node_outputs))
+
+            #global pooling instead of flatten to work with variable input size
+            outputs = tf.keras.layers.GlobalAveragePooling2D()(graph[-1])
+            #output layer, 10 outputs
+            outputs = tf.keras.layers.Dense(10, activation='softmax')(outputs)
+
+            model = tf.keras.Model(inputs=inputs, outputs=outputs, name='resnet')
             model.compile(optimizer='adam', loss=tf.keras.losses.SparseCategoricalCrossentropy(), metrics=['accuracy'])
         return model
 
     def update(self, g_best, w, cg):
-        self.update_fc(g_best, w, cg)
-        self.update_cnn(g_best, w, cg)
-
-    def update_fc(self, g_best, w, cg):
-        new_fc_layers = []
-        for i in range(max(len(g_best.fc_layers), len(self.fc_layers), len(self.p_best.fc_layers))):
+        new_nodes = []
+        for i in range(max(len(g_best.nodes), len(self.nodes), len(self.p_best.nodes))):
             if random.random() < w:
-                if i < len(self.fc_layers):
-                    new_fc_layers.append(self.fc_layers[i])
+                if i < len(self.nodes):
+                    new_nodes.append(self.nodes[i])
             else:
                 if random.random() < cg:
-                    if i < len(g_best.fc_layers):
-                        new_fc_layers.append(g_best.fc_layers[i])
+                    if i < len(g_best.nodes):
+                        new_nodes.append(g_best.nodes[i])
                 else:
-                    if i < len(self.p_best.fc_layers):
-                        new_fc_layers.append(self.p_best.fc_layers[i])
-        self.fc_layers = new_fc_layers
+                    if i < len(self.p_best.nodes):
+                        new_nodes.append(self.p_best.nodes[i])
+        for i, node in enumerate(new_nodes[:-1]):
+            if node is not None:
+                node['inputs'] = node['inputs'][:2]
+                node['operations'] = node['operations'][:2]
+                for j, input in enumerate(node['inputs']):
+                    if input >= i:
+                        node['inputs'][j] = random.choice(list(range(j)))
+        unused_nodes = list(range(len(new_nodes) - 1))
+        for node in new_nodes[:-1]:
+            if node is not None:
+                for input in node['inputs']:
+                    try:
+                        unused_nodes.remove(input)
+                    except:
+                        pass
 
-    def update_cnn(self, g_best, w, cg):
-        new_cnn_layers = []
-        for i in range(max(len(g_best.cnn_layers), len(self.cnn_layers), len(self.p_best.cnn_layers))):
-            if random.random() < w:
-                if i < len(self.cnn_layers):
-                    new_cnn_layers.append(self.cnn_layers[i])
-            else:
-                if random.random() < cg:
-                    if i < len(g_best.cnn_layers):
-                        new_cnn_layers.append(g_best.cnn_layers[i])
-                else:
-                    if i < len(self.p_best.cnn_layers):
-                        new_cnn_layers.append(self.p_best.cnn_layers[i])
-        self.cnn_layers = new_cnn_layers
+        new_nodes[-1] = {}
+        new_nodes[-1]['inputs'] = []
+        new_nodes[-1]['operations'] = []
+        new_nodes[-1]['combine_method'] = 'concatenate'
+        for i in unused_nodes:
+            op = {}
+            type = random.choice(self.initializer.config['operations'])
+            op['type'] = type
+            for key in self.initializer.config['config'][type]:
+                op[key] = random.choice(self.initializer.config['config'][type][key])
+            new_nodes[-1]['inputs'].append(i)
+            new_nodes[-1]['operations'].append(op)
+        self.nodes = new_nodes
 
 
     def copy(self):
         particle = Particle()
-        for layer in self.fc_layers:
-            particle.fc_layers.append(copy.deepcopy(layer))
-        for layer in self.cnn_layers:
-            particle.cnn_layers.append(copy.deepcopy(layer))
+        for layer in self.nodes:
+            particle.nodes.append(copy.deepcopy(layer))
         return particle
 
     def fit(self, x, y, tpu_strategy, epochs=100, batch_size=256, min_delta=0, patience=5):
