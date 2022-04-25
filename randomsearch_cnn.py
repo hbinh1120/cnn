@@ -30,12 +30,10 @@ class Model:
         layers.append(tf.keras.layers.Conv2D(self.cnn_layers[0]['filters'], self.cnn_layers[0]['kernel_size'], padding='same', activation='relu', input_shape=(None, None, 3)))
 
         for layer in self.cnn_layers[1:]:
-            if layer['type'] == 'dropout':
-                layers.append(tf.keras.layers.Dropout(layer['rate']))
-            elif layer['type'] == 'batchnorm':
+            if layer['type'] == 'conv':
+                layers.append(tf.keras.layers.Conv2D(layer['filters'], layer['kernel_size'], padding='same'))
                 layers.append(tf.keras.layers.BatchNormalization())
-            elif layer['type'] == 'conv':
-                layers.append(tf.keras.layers.Conv2D(layer['filters'], layer['kernel_size'], padding='same', activation='relu'))
+                layers.append(tf.keras.layers.Activation(tf.keras.activations.relu))
             elif layer['type'] == 'maxpool':
                 layers.append(tf.keras.layers.MaxPooling2D(padding='same'))
             elif layer['type'] == 'avgpool':
@@ -44,12 +42,10 @@ class Model:
         #FC layers, global pooling instead of flatten to work with variable input size
         layers.append(tf.keras.layers.GlobalAveragePooling2D())
         for layer in self.fc_layers:
-            if layer['type'] == 'dropout':
-                layers.append(tf.keras.layers.Dropout(layer['rate']))
-            elif layer['type'] == 'batchnorm':
+            if layer['type'] == 'fc':
+                layers.append(tf.keras.layers.Dense(layer['units']))
                 layers.append(tf.keras.layers.BatchNormalization())
-            elif layer['type'] == 'fc':
-                layers.append(tf.keras.layers.Dense(layer['units'], activation='relu'))
+                layers.append(tf.keras.layers.Activation(tf.keras.activations.relu))
 
         #output layer, 10 outputs
         layers.append(tf.keras.layers.Dense(10, activation='softmax'))

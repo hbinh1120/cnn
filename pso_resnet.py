@@ -101,7 +101,10 @@ class Particle:
                 for i in range(len(node['inputs'])):
                     used_nodes.append(node['inputs'][i])
                     if node['operations'][i]['type'] == 'conv':
-                        node_outputs.append(tf.keras.layers.Conv2D(node['operations'][i]['filters'], node['operations'][i]['kernel_size'], padding='same', activation='relu')(graph[node['inputs'][i] + 2]))
+                        output = tf.keras.layers.Conv2D(node['operations'][i]['filters'], node['operations'][i]['kernel_size'], padding='same')(graph[node['inputs'][i] + 2])
+                        output = tf.keras.layers.BatchNormalization()(output)
+                        output = tf.keras.layers.Activation(tf.keras.activations.relu)
+                        node_outputs.append(output)
                     elif node['operations'][i]['type'] == 'maxpool':
                         node_outputs.append(tf.keras.layers.MaxPooling2D(padding='same')(graph[node['inputs'][i] + 2]))
                     elif node['operations'][i]['type'] == 'avgpool':
