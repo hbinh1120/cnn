@@ -88,60 +88,71 @@ class Particle:
         with open('save/' + filename, 'w') as f:
             f.write(json.dumps(self.nodes) + '\n')
 
-    def compile(self, tpu_strategy):
+    def compile(self, tpu_strategy, motif_repeats=3, cell_repeats=3):
         #returns a tf model
         with tpu_strategy.scope():
-            graph = []
             inputs = tf.keras.Input(shape=(None, None, 3))
-            graph.append(inputs)
-            graph.append(inputs)
-            used_nodes = []
-            for node in self.nodes:
-                node_outputs = []
-                for i in range(len(node['inputs'])):
-                    used_nodes.append(node['inputs'][i])
-                    if node['operations'][i]['type'] == 'conv':
-                        output = tf.keras.layers.Conv2D(node['operations'][i]['filters'], node['operations'][i]['kernel_size'], padding='same')(graph[node['inputs'][i] + 2])
-                        output = tf.keras.layers.BatchNormalization()(output)
-                        output = tf.keras.layers.Activation(tf.keras.activations.relu)(output)
-                        node_outputs.append(output)
-                    elif node['operations'][i]['type'] == 'maxpool':
-                        node_outputs.append(tf.keras.layers.MaxPooling2D(padding='same')(graph[node['inputs'][i] + 2]))
-                    elif node['operations'][i]['type'] == 'avgpool':
-                        node_outputs.append(tf.keras.layers.AveragePooling2D(padding='same')(graph[node['inputs'][i] + 2]))
-                    elif node['operations'][i]['type'] == 'none':
-                        node_outputs.append(graph[node['inputs'][i] + 2])
-                
-                #get largest dimensions
-                max_channel = 0
-                for output in node_outputs:
-                    dimensions = output.shape.as_list()
-                    if dimensions[3] > max_channel:
-                        max_channel = dimensions[3]
+            model_graph = []
+            model_graph.append(inputs)
+            model_graph.append(inputs)
 
-                #resize all outputs to largest dimensions
-                for i, output in enumerate(node_outputs):
-                    node_outputs[i] = tf.keras.layers.Conv2D(max_channel, 1, padding='same', activation='relu')(output)
+            for i in range(motif_repeats):
+                for _ in range(cell_repeats):
+                    node_outputs = []
+                    node_outputs.append(model_graph[-1])
+                    node_outputs.append(model_graph[-2])
+                    used_nodes = []
+                    for node in self.nodes:
+                        node_inputs = []
+                        for i in range(len(node['inputs'])):
+                            used_nodes.append(node['inputs'][i])
+                            if node['operations'][i]['type'] == 'conv':
+                                output = tf.keras.layers.Conv2D(node['operations'][i]['filters'], node['operations'][i]['kernel_size'], padding='same')(node_outputs[node['inputs'][i] + 2])
+                                output = tf.keras.layers.BatchNormalization()(output)
+                                output = tf.keras.layers.Activation(tf.keras.activations.relu)(output)
+                                node_inputs.append(output)
+                            elif node['operations'][i]['type'] == 'maxpool':
+                                node_inputs.append(tf.keras.layers.MaxPooling2D(padding='same')(node_outputs[node['inputs'][i] + 2]))
+                            elif node['operations'][i]['type'] == 'avgpool':
+                                node_inputs.append(tf.keras.layers.AveragePooling2D(padding='same')(node_outputs[node['inputs'][i] + 2]))
+                            elif node['operations'][i]['type'] == 'none':
+                                node_inputs.append(node_outputs[node['inputs'][i] + 2])
+                        
+                        #get largest dimensions
+                        max_channel = 0
+                        for output in node_inputs:
+                            dimensions = output.shape.as_list()
+                            if dimensions[3] > max_channel:
+                                max_channel = dimensions[3]
 
-                #combine all outputs
-                if node['combine_method'] == 'add':
-                    graph.append(tf.keras.layers.Add()(node_outputs))
-                elif node['combine_method'] == 'concatenate':
-                    graph.append(tf.keras.layers.Concatenate()(node_outputs))
+                        #resize all outputs to largest dimensions
+                        for i, output in enumerate(node_inputs):
+                            node_inputs[i] = tf.keras.layers.Conv2D(max_channel, 1, padding='same', activation='relu')(output)
 
-            #point all nodes that dont have an output to the output node
-            nodes_to_outputs = []
-            for i, node in enumerate(graph):
-                if i not in used_nodes:
-                    nodes_to_outputs.append(node)
-            outputs = tf.keras.layers.Concatenate()(nodes_to_outputs)
+                        #combine all outputs
+                        if node['combine_method'] == 'add':
+                            node_outputs.append(tf.keras.layers.Add()(node_inputs))
+                        elif node['combine_method'] == 'concatenate':
+                            node_outputs.append(tf.keras.layers.Concatenate()(node_inputs))
+
+                    #point all nodes that dont have an output to the output node
+                    nodes_to_outputs = []
+                    for i, node in enumerate(node_outputs):
+                        if i not in used_nodes:
+                            nodes_to_outputs.append(node)
+                    cell_outputs = tf.keras.layers.Concatenate()(nodes_to_outputs)
+
+                if i < motif_repeats - 1:
+                    cell_outputs = tf.keras.layers.AveragePooling2D()(cell_outputs)
+                    model_graph.append(cell_outputs)
+                model_graph.append(cell_outputs)
 
             #global pooling instead of flatten to work with variable input size
-            outputs = tf.keras.layers.GlobalAveragePooling2D()(outputs)
+            model_outputs = tf.keras.layers.GlobalAveragePooling2D()(model_graph[-1])
             #output layer, 10 outputs
-            outputs = tf.keras.layers.Dense(10, activation='softmax')(outputs)
+            model_outputs = tf.keras.layers.Dense(10, activation='softmax')(model_outputs)
 
-            model = tf.keras.Model(inputs=inputs, outputs=outputs, name='resnet')
+            model = tf.keras.Model(inputs=inputs, outputs=model_outputs, name='resnet')
             model.compile(optimizer='adam', loss=tf.keras.losses.SparseCategoricalCrossentropy(), metrics=['accuracy'])
         return model
 
@@ -175,7 +186,7 @@ class Particle:
             particle.nodes.append(copy.deepcopy(layer))
         return particle
 
-    def fit(self, x, y, tpu_strategy, epochs=100, batch_size=256, min_delta=0, patience=5):
+    def fit(self, x, y, tpu_strategy, epochs=100, batch_size=32, min_delta=0, patience=5):
         model = self.compile(tpu_strategy)
         earlystop = tf.keras.callbacks.EarlyStopping(monitor='val_loss', min_delta=min_delta, patience=patience, restore_best_weights=True)
         history = model.fit(x, y, validation_split=0.1, epochs=epochs, batch_size=batch_size, callbacks=[earlystop], verbose=0)
@@ -204,7 +215,7 @@ if __name__ == '__main__':
 
     tf.config.experimental_connect_to_cluster(tpu)
     tf.tpu.experimental.initialize_tpu_system(tpu)
-    tpu_strategy = tf.distribute.experimental.TPUStrategy(tpu)
+    tpu_strategy = tf.distribute.TPUStrategy(tpu)
 
     #particle swarm to find best model
     swarm = ParticleSwarm()
