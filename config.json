@@ -6,17 +6,15 @@
     "min_nodes_in_cell": 5,
     "max_nodes_in_cell": 5,
 
-    "layers": ["conv", "maxpool", "avgpool", "fc", "batchnorm", "dropout"],
+    "layers": ["conv", "maxpool", "avgpool", "fc"],
     "operations": ["conv", "none"],
     "combine_methods": ["add", "concatenate"],
 
     "transitions": {
-        "conv": [5, 1, 1, 0, 1, 0],
-        "maxpool": [1, 0, 0, 0, 0, 0],
-        "avgpool": [1, 0, 0, 0, 0, 0],
-        "fc": [0, 0, 0, 3, 0, 0],
-        "batchnorm": [3, 1, 1, 0, 0, 0],
-        "dropout": [3, 1, 1, 0, 0, 0]
+        "conv": [5, 1, 1, 0],
+        "maxpool": [1, 0, 0, 0],
+        "avgpool": [1, 0, 0, 0],
+        "fc": [0, 0, 0, 1]
     },
 
     "config": {
@@ -28,10 +26,6 @@
         "avgpool": {},
         "fc": {
             "units": [16, 32, 64, 128]
-        },
-        "batchnorm": {},
-        "dropout": {
-            "rate": [0.3, 0.4, 0.5]
         },
         "none": {}
     }
