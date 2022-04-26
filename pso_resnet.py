@@ -34,7 +34,7 @@ class ParticleSwarm:
                     particle.nodes = json.loads(f.readline())
                     self.particles.append(particle)
 
-    def fit(self, x, y, tpu_strategy, w=.6, cg=.4, load=False, num_particles=10, iters=40, epochs=100, min_delta=0, patience=5):
+    def fit(self, x, y, tpu_strategy, w=.6, cg=.4, load=False, num_particles=10, iters=40, epochs=20, min_delta=0, patience=5):
         if load:
             self.load()
         else:
@@ -88,7 +88,7 @@ class Particle:
         with open('save/' + filename, 'w') as f:
             f.write(json.dumps(self.nodes) + '\n')
 
-    def compile(self, tpu_strategy, motif_repeats=3, cell_repeats=3):
+    def compile(self, tpu_strategy, motif_repeats=3, cell_repeats=2):
         #returns a tf model
         with tpu_strategy.scope():
             inputs = tf.keras.Input(shape=(None, None, 3))
@@ -96,7 +96,7 @@ class Particle:
             model_graph.append(inputs)
             model_graph.append(inputs)
 
-            for i in range(motif_repeats):
+            for repeat in range(motif_repeats):
                 for _ in range(cell_repeats):
                     node_outputs = []
                     node_outputs.append(model_graph[-1])
@@ -129,7 +129,10 @@ class Particle:
                         if node['combine_method'] == 'add':
                             #adds more channels to match inputs
                             for i, output in enumerate(node_inputs):
-                                node_inputs[i] = tf.keras.layers.Conv2D(max_channel, 1, padding='same', activation='relu')(output)
+                                output = tf.keras.layers.Conv2D(max_channel, 1, padding='same', activation='relu')(output)
+                                output = tf.keras.layers.BatchNormalization()(output)
+                                output = tf.keras.layers.Activation(tf.keras.activations.relu)(output)
+                                node_inputs[i] = output
                             node_outputs.append(tf.keras.layers.Add()(node_inputs))
                         elif node['combine_method'] == 'concatenate':
                             node_outputs.append(tf.keras.layers.Concatenate()(node_inputs))
@@ -141,9 +144,9 @@ class Particle:
                             nodes_to_outputs.append(node)
                     cell_outputs = tf.keras.layers.Concatenate()(nodes_to_outputs)
 
-                if i < motif_repeats - 1:
+                if repeat < motif_repeats - 1:
+                    model_graph.append(tf.keras.layers.AveragePooling2D()(model_graph[-1]))
                     cell_outputs = tf.keras.layers.AveragePooling2D()(cell_outputs)
-                    model_graph.append(cell_outputs)
                 model_graph.append(cell_outputs)
 
             #global pooling instead of flatten to work with variable input size

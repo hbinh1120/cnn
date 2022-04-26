@@ -28,7 +28,7 @@ class Model:
             model_graph.append(inputs)
             model_graph.append(inputs)
 
-            for i in range(motif_repeats):
+            for repeat in range(motif_repeats):
                 for _ in range(cell_repeats):
                     node_outputs = []
                     node_outputs.append(model_graph[-1])
@@ -57,12 +57,14 @@ class Model:
                             if dimensions[3] > max_channel:
                                 max_channel = dimensions[3]
 
-                        #resize all outputs to largest dimensions
-                        for i, output in enumerate(node_inputs):
-                            node_inputs[i] = tf.keras.layers.Conv2D(max_channel, 1, padding='same', activation='relu')(output)
-
                         #combine all outputs
                         if node['combine_method'] == 'add':
+                            #adds more channels to match inputs
+                            for i, output in enumerate(node_inputs):
+                                output = tf.keras.layers.Conv2D(max_channel, 1, padding='same', activation='relu')(output)
+                                output = tf.keras.layers.BatchNormalization()(output)
+                                output = tf.keras.layers.Activation(tf.keras.activations.relu)(output)
+                                node_inputs[i] = output
                             node_outputs.append(tf.keras.layers.Add()(node_inputs))
                         elif node['combine_method'] == 'concatenate':
                             node_outputs.append(tf.keras.layers.Concatenate()(node_inputs))
@@ -74,9 +76,9 @@ class Model:
                             nodes_to_outputs.append(node)
                     cell_outputs = tf.keras.layers.Concatenate()(nodes_to_outputs)
 
-                if i < motif_repeats - 1:
+                if repeat < motif_repeats - 1:
+                    model_graph.append(tf.keras.layers.AveragePooling2D()(model_graph[-1]))
                     cell_outputs = tf.keras.layers.AveragePooling2D()(cell_outputs)
-                    model_graph.append(cell_outputs)
                 model_graph.append(cell_outputs)
 
             #global pooling instead of flatten to work with variable input size
