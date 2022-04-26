@@ -92,6 +92,8 @@ class Particle:
         with open('save/' + filename, 'w') as f:
             f.write(json.dumps(self.cnn_layers) + '\n')
             f.write(json.dumps(self.fc_layers) + '\n')
+            f.write(json.dumps(self.p_best.cnn_layers) + '\n')
+            f.write(json.dumps(self.p_best.fc_layers) + '\n')
 
     def compile(self, tpu_strategy):
         #returns tf.keras.models.Sequential object

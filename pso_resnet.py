@@ -87,8 +87,9 @@ class Particle:
             os.makedirs('save')
         with open('save/' + filename, 'w') as f:
             f.write(json.dumps(self.nodes) + '\n')
+            f.write(json.dumps(self.p_best.nodes) + '\n')
 
-    def compile(self, tpu_strategy, motif_repeats=3, cell_repeats=2):
+    def compile(self, tpu_strategy, motif_repeats=3, cell_repeats=3):
         #returns a tf model
         with tpu_strategy.scope():
             inputs = tf.keras.Input(shape=(None, None, 3))
