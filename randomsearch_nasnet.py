@@ -20,7 +20,7 @@ class Model:
         with open('save/log.txt', 'a') as f:
             f.write(str(model_num) + ' ' + str(self.best_loss) + '\n')
 
-    def compile(self, tpu_strategy, motif_repeats=3, cell_repeats=1):
+    def compile(self, tpu_strategy, motif_repeats=3, cell_repeats=2):
         #returns a tf model
         with tpu_strategy.scope():
             #pair of inputs to use for each cell
@@ -39,9 +39,9 @@ class Model:
                         for i in range(len(node['inputs'])):
                             used_nodes.append(node['inputs'][i])
                             if node['operations'][i]['type'] == 'conv':
-                                output = tf.keras.layers.Conv2D(node['operations'][i]['filters'], node['operations'][i]['kernel_size'], padding='same')(node_outputs[node['inputs'][i] + 2])
-                                output = tf.keras.layers.BatchNormalization()(output)
+                                output = tf.keras.layers.BatchNormalization()(node_outputs[node['inputs'][i] + 2])
                                 output = tf.keras.layers.Activation(tf.keras.activations.relu)(output)
+                                output = tf.keras.layers.Conv2D(node['operations'][i]['filters'], node['operations'][i]['kernel_size'], padding='same')(output)
                                 node_inputs.append(output)
                             elif node['operations'][i]['type'] == 'maxpool':
                                 node_inputs.append(tf.keras.layers.MaxPooling2D(stride=1, padding='same')(node_outputs[node['inputs'][i] + 2]))
@@ -61,10 +61,11 @@ class Model:
                         if node['combine_method'] == 'add':
                             #adds more channels to match inputs
                             for i, output in enumerate(node_inputs):
-                                output = tf.keras.layers.Conv2D(max_channel, 1, padding='same')(output)
-                                output = tf.keras.layers.BatchNormalization()(output)
-                                output = tf.keras.layers.Activation(tf.keras.activations.relu)(output)
-                                node_inputs[i] = output
+                                if output.shape.as_list()[3] != max_channel:
+                                    output = tf.keras.layers.BatchNormalization()(output)
+                                    output = tf.keras.layers.Activation(tf.keras.activations.relu)(output)
+                                    output = tf.keras.layers.Conv2D(max_channel, 1, padding='same')(output)
+                                    node_inputs[i] = output
                             node_outputs.append(tf.keras.layers.Add()(node_inputs))
                         elif node['combine_method'] == 'concatenate':
                             node_outputs.append(tf.keras.layers.Concatenate()(node_inputs))
@@ -82,19 +83,20 @@ class Model:
 
                 #reduce dimensions of inputs for next repeat
                 channels = input_nodes[0].shape.as_list()[-1]
-                input_nodes[0] = tf.keras.layers.Conv2D(0.5 * channels, 1, padding='same')(input_nodes[0])
                 input_nodes[0] = tf.keras.layers.BatchNormalization()(input_nodes[0])
                 input_nodes[0] = tf.keras.layers.Activation(tf.keras.activations.relu)(input_nodes[0])
+                input_nodes[0] = tf.keras.layers.Conv2D(int(0.5 * channels), 1, padding='same')(input_nodes[0])
                 input_nodes[0] = tf.keras.layers.AveragePooling2D()(input_nodes[0])
    
                 channels = input_nodes[1].shape.as_list()[-1]
-                input_nodes[1] = tf.keras.layers.Conv2D(0.5 * channels, 1, padding='same')(input_nodes[1])
                 input_nodes[1] = tf.keras.layers.BatchNormalization()(input_nodes[1])
                 input_nodes[1] = tf.keras.layers.Activation(tf.keras.activations.relu)(input_nodes[1])
+                input_nodes[1] = tf.keras.layers.Conv2D(int(0.5 * channels), 1, padding='same')(input_nodes[1])
                 input_nodes[1] = tf.keras.layers.AveragePooling2D()(input_nodes[1])
 
+            model_outputs = tf.keras.layers.Concatenate()(input_nodes)
             #global pooling instead of flatten to work with variable input size
-            model_outputs = tf.keras.layers.GlobalAveragePooling2D()(input_nodes[1])
+            model_outputs = tf.keras.layers.GlobalAveragePooling2D()(model_outputs)
             #output layer, 10 outputs
             model_outputs = tf.keras.layers.Dense(10, activation='softmax')(model_outputs)
 
@@ -103,7 +105,7 @@ class Model:
             model.compile(optimizer='adam', loss=tf.keras.losses.SparseCategoricalCrossentropy(), metrics=['accuracy'])
         return model
 
-    def fit(self, x, y, tpu_strategy, iters=300, epochs=20, batch_size=64, min_delta=0, patience=5):
+    def fit(self, x, y, tpu_strategy, iters=300, epochs=20, batch_size=128, min_delta=0, patience=5):
         initializer = Initializers()
         for i in range(iters):
             print("MODEL {}".format(i + 1), end=" ")

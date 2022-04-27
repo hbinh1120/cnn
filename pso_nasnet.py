@@ -34,7 +34,7 @@ class ParticleSwarm:
                     particle.nodes = json.loads(f.readline())
                     self.particles.append(particle)
 
-    def fit(self, x, y, tpu_strategy, w=.6, cg=.4, load=False, num_particles=10, iters=40, epochs=20, min_delta=0, patience=5):
+    def fit(self, x, y, tpu_strategy, w=.6, cg=.4, load=False, num_particles=10, iters=40, epochs=100, min_delta=0, patience=5):
         if load:
             self.load()
         else:
@@ -63,6 +63,7 @@ class ParticleSwarm:
                     print("New best model found")
                     self.save_g_best(i * num_particles + j + 1)
                     model.save('g_best.h5')
+                    tf.keras.utils.plot_model(model, "g_best.png")
 
             #print gbest at the end of each iteration
             print("Best loss: ", self.g_best_loss)
@@ -89,7 +90,7 @@ class Particle:
             f.write(json.dumps(self.nodes) + '\n')
             f.write(json.dumps(self.p_best.nodes) + '\n')
 
-    def compile(self, tpu_strategy, motif_repeats=3, cell_repeats=1):
+    def compile(self, tpu_strategy, motif_repeats=3, cell_repeats=2):
         #returns a tf model
         with tpu_strategy.scope():
             #pair of inputs to use for each cell
@@ -108,9 +109,9 @@ class Particle:
                         for i in range(len(node['inputs'])):
                             used_nodes.append(node['inputs'][i])
                             if node['operations'][i]['type'] == 'conv':
-                                output = tf.keras.layers.Conv2D(node['operations'][i]['filters'], node['operations'][i]['kernel_size'], padding='same')(node_outputs[node['inputs'][i] + 2])
-                                output = tf.keras.layers.BatchNormalization()(output)
+                                output = tf.keras.layers.BatchNormalization()(node_outputs[node['inputs'][i] + 2])
                                 output = tf.keras.layers.Activation(tf.keras.activations.relu)(output)
+                                output = tf.keras.layers.Conv2D(node['operations'][i]['filters'], node['operations'][i]['kernel_size'], padding='same')(output)
                                 node_inputs.append(output)
                             elif node['operations'][i]['type'] == 'maxpool':
                                 node_inputs.append(tf.keras.layers.MaxPooling2D(stride=1, padding='same')(node_outputs[node['inputs'][i] + 2]))
@@ -130,10 +131,11 @@ class Particle:
                         if node['combine_method'] == 'add':
                             #adds more channels to match inputs
                             for i, output in enumerate(node_inputs):
-                                output = tf.keras.layers.Conv2D(max_channel, 1, padding='same')(output)
-                                output = tf.keras.layers.BatchNormalization()(output)
-                                output = tf.keras.layers.Activation(tf.keras.activations.relu)(output)
-                                node_inputs[i] = output
+                                if output.shape.as_list()[3] != max_channel:
+                                    output = tf.keras.layers.BatchNormalization()(output)
+                                    output = tf.keras.layers.Activation(tf.keras.activations.relu)(output)
+                                    output = tf.keras.layers.Conv2D(max_channel, 1, padding='same')(output)
+                                    node_inputs[i] = output
                             node_outputs.append(tf.keras.layers.Add()(node_inputs))
                         elif node['combine_method'] == 'concatenate':
                             node_outputs.append(tf.keras.layers.Concatenate()(node_inputs))
@@ -151,19 +153,20 @@ class Particle:
 
                 #reduce dimensions of inputs for next repeat
                 channels = input_nodes[0].shape.as_list()[-1]
-                input_nodes[0] = tf.keras.layers.Conv2D(0.5 * channels, 1, padding='same')(input_nodes[0])
                 input_nodes[0] = tf.keras.layers.BatchNormalization()(input_nodes[0])
                 input_nodes[0] = tf.keras.layers.Activation(tf.keras.activations.relu)(input_nodes[0])
+                input_nodes[0] = tf.keras.layers.Conv2D(int(0.5 * channels), 1, padding='same')(input_nodes[0])
                 input_nodes[0] = tf.keras.layers.AveragePooling2D()(input_nodes[0])
    
                 channels = input_nodes[1].shape.as_list()[-1]
-                input_nodes[1] = tf.keras.layers.Conv2D(0.5 * channels, 1, padding='same')(input_nodes[1])
                 input_nodes[1] = tf.keras.layers.BatchNormalization()(input_nodes[1])
                 input_nodes[1] = tf.keras.layers.Activation(tf.keras.activations.relu)(input_nodes[1])
+                input_nodes[1] = tf.keras.layers.Conv2D(int(0.5 * channels), 1, padding='same')(input_nodes[1])
                 input_nodes[1] = tf.keras.layers.AveragePooling2D()(input_nodes[1])
 
+            model_outputs = tf.keras.layers.Concatenate()(input_nodes)
             #global pooling instead of flatten to work with variable input size
-            model_outputs = tf.keras.layers.GlobalAveragePooling2D()(input_nodes[1])
+            model_outputs = tf.keras.layers.GlobalAveragePooling2D()(model_outputs)
             #output layer, 10 outputs
             model_outputs = tf.keras.layers.Dense(10, activation='softmax')(model_outputs)
 
@@ -202,7 +205,7 @@ class Particle:
             particle.nodes.append(copy.deepcopy(layer))
         return particle
 
-    def fit(self, x, y, tpu_strategy, epochs=100, batch_size=64, min_delta=0, patience=5):
+    def fit(self, x, y, tpu_strategy, epochs=100, batch_size=128, min_delta=0, patience=5):
         model = self.compile(tpu_strategy)
         earlystop = tf.keras.callbacks.EarlyStopping(monitor='val_loss', min_delta=min_delta, patience=patience, restore_best_weights=True)
         history = model.fit(x, y, validation_split=0.1, epochs=epochs, batch_size=batch_size, callbacks=[earlystop], verbose=0)
