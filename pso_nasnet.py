@@ -89,19 +89,17 @@ class Particle:
             f.write(json.dumps(self.nodes) + '\n')
             f.write(json.dumps(self.p_best.nodes) + '\n')
 
-    def compile(self, tpu_strategy, motif_repeats=3, cell_repeats=3):
+    def compile(self, tpu_strategy, motif_repeats=3, cell_repeats=2):
         #returns a tf model
         with tpu_strategy.scope():
             inputs = tf.keras.Input(shape=(None, None, 3))
-            model_graph = []
-            model_graph.append(inputs)
-            model_graph.append(inputs)
+            input_nodes = [inputs, inputs]
 
             for repeat in range(motif_repeats):
                 for _ in range(cell_repeats):
                     node_outputs = []
-                    node_outputs.append(model_graph[-1])
-                    node_outputs.append(model_graph[-2])
+                    node_outputs.append(input_nodes[0])
+                    node_outputs.append(input_nodes[1])
                     used_nodes = []
                     for node in self.nodes:
                         node_inputs = []
@@ -144,14 +142,15 @@ class Particle:
                         if i not in used_nodes:
                             nodes_to_outputs.append(node)
                     cell_outputs = tf.keras.layers.Concatenate()(nodes_to_outputs)
+                    input_nodes[0] = input_nodes[1]
+                    input_nodes[1] = cell_outputs
 
                 if repeat < motif_repeats - 1:
-                    model_graph.append(tf.keras.layers.AveragePooling2D()(model_graph[-1]))
-                    cell_outputs = tf.keras.layers.AveragePooling2D()(cell_outputs)
-                model_graph.append(cell_outputs)
+                    input_nodes[0] = tf.keras.layers.AveragePooling2D()(input_nodes[0])
+                    input_nodes[1] = tf.keras.layers.AveragePooling2D()(input_nodes[1])
 
             #global pooling instead of flatten to work with variable input size
-            model_outputs = tf.keras.layers.GlobalAveragePooling2D()(model_graph[-1])
+            model_outputs = tf.keras.layers.GlobalAveragePooling2D()(input_nodes[1])
             #output layer, 10 outputs
             model_outputs = tf.keras.layers.Dense(10, activation='softmax')(model_outputs)
 
@@ -189,7 +188,7 @@ class Particle:
             particle.nodes.append(copy.deepcopy(layer))
         return particle
 
-    def fit(self, x, y, tpu_strategy, epochs=100, batch_size=32, min_delta=0, patience=5):
+    def fit(self, x, y, tpu_strategy, epochs=100, batch_size=8, min_delta=0, patience=5):
         model = self.compile(tpu_strategy)
         earlystop = tf.keras.callbacks.EarlyStopping(monitor='val_loss', min_delta=min_delta, patience=patience, restore_best_weights=True)
         history = model.fit(x, y, validation_split=0.1, epochs=epochs, batch_size=batch_size, callbacks=[earlystop], verbose=0)

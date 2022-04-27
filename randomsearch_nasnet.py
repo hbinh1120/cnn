@@ -75,11 +75,11 @@ class Model:
                         if i not in used_nodes:
                             nodes_to_outputs.append(node)
                     cell_outputs = tf.keras.layers.Concatenate()(nodes_to_outputs)
+                    model_graph.append(cell_outputs)
 
                 if repeat < motif_repeats - 1:
-                    model_graph.append(tf.keras.layers.AveragePooling2D()(model_graph[-1]))
-                    cell_outputs = tf.keras.layers.AveragePooling2D()(cell_outputs)
-                model_graph.append(cell_outputs)
+                    model_graph.append(tf.keras.layers.AveragePooling2D()(model_graph[-2]))
+                    model_graph.append(tf.keras.layers.AveragePooling2D()(model_graph[-2]))
 
             #global pooling instead of flatten to work with variable input size
             model_outputs = tf.keras.layers.GlobalAveragePooling2D()(model_graph[-1])
