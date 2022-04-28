@@ -107,7 +107,7 @@ class Particle:
                     for node in self.nodes:
                         node_inputs = []
                         for i in range(len(node['inputs'])):
-                            used_nodes.append(node['inputs'][i])
+                            used_nodes.append(node['inputs'][i] + 2)
                             if node['operations'][i]['type'] == 'conv':
                                 output = tf.keras.layers.BatchNormalization()(node_outputs[node['inputs'][i] + 2])
                                 output = tf.keras.layers.Activation(tf.keras.activations.relu)(output)
@@ -193,11 +193,9 @@ class Particle:
             node['operations'] = node['operations'][:2]
             for j, input in enumerate(node['inputs']):
                 if input >= i:
-                    node['inputs'][j] = random.choice(list(range(-2, j)))
-
+                    node['inputs'][j] = random.choice(list(range(-2, i)))
 
         self.nodes = new_nodes
-
 
     def copy(self):
         particle = Particle()
