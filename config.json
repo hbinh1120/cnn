@@ -3,11 +3,11 @@
     "max_cnn_layers": 20,
     "min_fc_layers": 0,
     "max_fc_layers": 4,
-    "min_nodes_in_cell": 1,
+    "min_nodes_in_cell": 5,
     "max_nodes_in_cell": 5,
 
     "layers": ["conv", "maxpool", "avgpool", "fc"],
-    "operations": ["conv", "none"],
+    "operations": ["conv", "separableconv", "none"],
     "combine_methods": ["add"],
 
     "transitions": {
@@ -19,7 +19,9 @@
 
     "config": {
         "conv": {
-            "filters": [16, 32, 64],
+            "kernel_size": [3, 5, 7]
+        },
+        "separableconv": {
             "kernel_size": [3, 5, 7]
         },
         "maxpool": {},

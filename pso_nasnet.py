@@ -1,3 +1,4 @@
+from math import exp
 import tensorflow as tf
 import random
 import copy
@@ -34,7 +35,7 @@ class ParticleSwarm:
                     particle.nodes = json.loads(f.readline())
                     self.particles.append(particle)
 
-    def fit(self, x, y, tpu_strategy, w=.6, cg=.4, load=False, num_particles=10, iters=40, epochs=100, min_delta=0, patience=5):
+    def fit(self, x, y, tpu_strategy, w=.95, c1=4, c2=4, load=False, num_particles=10, iters=40, epochs=100, min_delta=0, patience=5):
         if load:
             self.load()
         else:
@@ -70,18 +71,25 @@ class ParticleSwarm:
 
             #update particles
             for particle in self.particles:
-                particle.update(self.g_best, w, cg)
+                particle.update_velocity(self.g_best, w, c1, c2)
+                particle.update_position()
 
 class Particle:
     def __init__(self) -> None:
         self.p_best = self
         self.p_best_loss = float('inf')
+        self.velocity = []
 
         self.nodes = []
 
     def initialize(self, initializer=Initializers()):
         self.initializer = initializer
         self.nodes = self.initializer.cell()
+        for node in self.nodes:
+            node_velocity = []
+            for _ in range(len(node['graph'])):
+                node_velocity.append(-4)
+            self.velocity.append(node_velocity)
 
     def save(self, filename):
         if not os.path.exists('save'):
@@ -90,36 +98,44 @@ class Particle:
             f.write(json.dumps(self.nodes) + '\n')
             f.write(json.dumps(self.p_best.nodes) + '\n')
 
-    def compile(self, tpu_strategy, motif_repeats=3, cell_repeats=2):
+    def compile(self, tpu_strategy, reductions=3, cell_repeats=2, filters=16):
         #returns a tf model
         with tpu_strategy.scope():
             #pair of inputs to use for each cell
             inputs = tf.keras.Input(shape=(None, None, 3))
             input_nodes = [inputs, inputs]
 
-            for _ in range(motif_repeats):
+            for reduction in range(reductions):
                 for _ in range(cell_repeats):
                     #list of outputs of each node in cell
                     node_outputs = []
                     node_outputs.append(input_nodes[0])
                     node_outputs.append(input_nodes[1])
                     used_nodes = []
-                    for node in self.nodes:
+                    for node_index, node in enumerate(self.nodes):
                         node_inputs = []
-                        for i in range(len(node['inputs'])):
-                            used_nodes.append(node['inputs'][i] + 2)
-                            if node['operations'][i]['type'] == 'conv':
-                                output = tf.keras.layers.BatchNormalization()(node_outputs[node['inputs'][i] + 2])
-                                output = tf.keras.layers.Activation(tf.keras.activations.relu)(output)
-                                output = tf.keras.layers.Conv2D(node['operations'][i]['filters'], node['operations'][i]['kernel_size'], padding='same')(output)
-                                node_inputs.append(output)
-                            elif node['operations'][i]['type'] == 'maxpool':
-                                node_inputs.append(tf.keras.layers.MaxPooling2D(stride=1, padding='same')(node_outputs[node['inputs'][i] + 2]))
-                            elif node['operations'][i]['type'] == 'avgpool':
-                                node_inputs.append(tf.keras.layers.AveragePooling2D(stride=1, padding='same')(node_outputs[node['inputs'][i] + 2]))
-                            elif node['operations'][i]['type'] == 'none':
-                                node_inputs.append(node_outputs[node['inputs'][i] + 2])
+                        for i, edge in enumerate(node['graph']):
+                            if edge == 1:
+                                used_nodes.append(node['edges'][i]['from_node'])
+                                if node['edges'][i]['type'] == 'conv':
+                                    output = tf.keras.layers.BatchNormalization()(node_outputs[node['edges'][i]['from_node']])
+                                    output = tf.keras.layers.Activation(tf.keras.activations.relu)(output)
+                                    output = tf.keras.layers.Conv2D(filters * (2 ** reduction), node['edges'][i]['kernel_size'], padding='same')(output)
+                                    node_inputs.append(output)
+                                elif node['edges'][i]['type'] == 'separableconv':
+                                    output = tf.keras.layers.BatchNormalization()(node_outputs[node['edges'][i]['from_node']])
+                                    output = tf.keras.layers.Activation(tf.keras.activations.relu)(output)
+                                    output = tf.keras.layers.SeparableConv2D(filters * (2 ** reduction), node['edges'][i]['kernel_size'], padding='same')(output)
+                                    node_inputs.append(output)
+                                elif node['edges'][i]['type'] == 'none':
+                                    node_inputs.append(node_outputs[node['edges'][i]['from_node']])
                         
+                        #dont use node if it has no input
+                        if len(node_inputs) == 0:
+                            used_nodes.append(node_index + 2)
+                            node_outputs.append(node_outputs[0])
+                            continue
+
                         #get largest dimensions
                         max_channel = 0
                         for output in node_inputs:
@@ -136,9 +152,15 @@ class Particle:
                                     output = tf.keras.layers.Activation(tf.keras.activations.relu)(output)
                                     output = tf.keras.layers.Conv2D(max_channel, 1, padding='same')(output)
                                     node_inputs[i] = output
-                            node_outputs.append(tf.keras.layers.Add()(node_inputs))
+                            if len(node_inputs) > 1:
+                                node_outputs.append(tf.keras.layers.Add()(node_inputs))
+                            else:
+                                node_outputs.append(node_inputs[0])
                         elif node['combine_method'] == 'concatenate':
-                            node_outputs.append(tf.keras.layers.Concatenate()(node_inputs))
+                            if len(node_inputs) > 1:
+                                node_outputs.append(tf.keras.layers.Concatenate()(node_inputs))
+                            else:
+                                node_outputs.append(node_inputs[0])
 
                     #point all nodes that dont have an output to the output node
                     nodes_to_outputs = []
@@ -175,27 +197,24 @@ class Particle:
             model.compile(optimizer='adam', loss=tf.keras.losses.SparseCategoricalCrossentropy(), metrics=['accuracy'])
         return model
 
-    def update(self, g_best, w, cg):
-        new_nodes = []
-        for i in range(max(len(g_best.nodes), len(self.nodes), len(self.p_best.nodes))):
-            if random.random() < w:
-                if i < len(self.nodes):
-                    new_nodes.append(self.nodes[i])
-            else:
-                if random.random() < cg:
-                    if i < len(g_best.nodes):
-                        new_nodes.append(g_best.nodes[i])
-                else:
-                    if i < len(self.p_best.nodes):
-                        new_nodes.append(self.p_best.nodes[i])
-        for i, node in enumerate(new_nodes):
-            node['inputs'] = node['inputs'][:2]
-            node['operations'] = node['operations'][:2]
-            for j, input in enumerate(node['inputs']):
-                if input >= i:
-                    node['inputs'][j] = random.choice(list(range(-2, i)))
+    def update_velocity(self, g_best, w, c1, c2):
+        for i, node_velocity in enumerate(self.velocity):
+            for j, _ in enumerate(node_velocity):
+                self.velocity[i][j] = w * self.velocity[i][j] \
+                    + c1 * random.random() * (self.p_best.nodes[i]['graph'][j] - self.nodes[i]['graph'][j]) \
+                    + c2 * random.random() * (g_best.nodes[i]['graph'][j] - self.nodes[i]['graph'][j])
+                if self.velocity[i][j] > 4:
+                    self.velocity[i][j] = 4
+                elif self.velocity[i][j] < -4:
+                    self.velocity[i][j] = -4
 
-        self.nodes = new_nodes
+    def update_position(self):
+        for i, node_velocity in enumerate(self.velocity):
+            for j, dim_velocity in enumerate(node_velocity):
+                if random.random() >= 1 / (1 + exp(-dim_velocity)):
+                    self.nodes[i]['graph'][j] = 0
+                else:
+                    self.nodes[i]['graph'][j] = 1
 
     def copy(self):
         particle = Particle()

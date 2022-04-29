@@ -53,18 +53,31 @@ class Initializers:
 
         #each node takes 2 of previous nodes as inputs
         for i in range(num_nodes):
-            operations = []
-            for _ in range(2):
-                op = {}
-                type = random.choice(self.config['operations'])
-                op['type'] = type
-                for key in self.config['config'][type]:
-                    op[key] = random.choice(self.config['config'][type][key])
-                operations.append(op)
+            edges = []
+            for j in range(i + 2):
+                for operation in self.config['operations']:
+                    has_param = False
+                    for param in self.config['config'][operation]:
+                        has_param = True
+                        for choice in self.config['config'][operation][param]:
+                            edge = {}
+                            edge['from_node'] = j
+                            edge['type'] = operation
+                            edge[param] = choice
+                            edges.append(edge)
+                            edges.append(edge)
+                    if not has_param:
+                        edge = {}
+                        edge['from_node'] = j
+                        edge['type'] = operation
+                        edges.append(edge)
+                        edges.append(edge)
 
             node = {}
-            node['inputs'] = random.choices(list(range(-2, i)), k=2)
-            node['operations'] = operations
+            node['edges'] = edges
+            node['graph'] = [0] * len(edges)
+            for i in random.sample(range(len(edges)), 2):
+                node['graph'][i] = 1
             node['combine_method'] = random.choice(self.config['combine_methods'])
             nodes.append(node)
 
