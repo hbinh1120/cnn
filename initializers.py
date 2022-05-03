@@ -65,12 +65,10 @@ class Initializers:
                             edge['type'] = operation
                             edge[param] = choice
                             edges.append(edge)
-                            edges.append(edge)
                     if not has_param:
                         edge = {}
                         edge['from_node'] = j
                         edge['type'] = operation
-                        edges.append(edge)
                         edges.append(edge)
 
             node = {}
@@ -82,3 +80,35 @@ class Initializers:
             nodes.append(node)
 
         return nodes
+
+    def cell_graph(self):
+        '''
+        returns a list of all possible connections in a cell \n
+        each element is a list of all possible inputs for the corresponding node
+        '''
+        import copy
+        edges = []
+        for i in range(self.config['num_nodes']):
+            node_edges = []
+            for j in range(i + 2):
+                for operation in self.config['operations']:
+                    edge = copy.deepcopy(operation)
+                    edge['from_node'] = j
+                    node_edges.append(edge)
+            edges.append(node_edges)
+        return edges
+
+    def cell_init(self, edges):
+        '''
+        returns a subgraph of the full graph of all possible connections \n
+        subgraph contains exactly 2 in edges for each node
+        '''
+        import random
+        graph = []
+        for node_edges in edges:
+            graph_node = []
+            graph_node = [0] * len(node_edges)
+            for i in random.sample(range(len(node_edges)), 2):
+                graph_node[i] = 1
+            graph.append(graph_node)
+        return graph

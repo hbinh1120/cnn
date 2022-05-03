@@ -3,11 +3,9 @@
     "max_cnn_layers": 20,
     "min_fc_layers": 0,
     "max_fc_layers": 4,
-    "min_nodes_in_cell": 5,
-    "max_nodes_in_cell": 5,
+    "num_nodes": 5,
 
     "layers": ["conv", "maxpool", "avgpool", "fc"],
-    "operations": ["conv", "separableconv", "none"],
     "combine_methods": ["add"],
 
     "transitions": {
@@ -19,7 +17,7 @@
 
     "config": {
         "conv": {
-            "kernel_size": [3, 5, 7]
+            "kernel_size": [1, 3, 5]
         },
         "separableconv": {
             "kernel_size": [3, 5, 7]
@@ -30,5 +28,34 @@
             "units": [16, 32, 64, 128]
         },
         "none": {}
-    }
+    },
+    "operations": [
+        {
+            "type": "conv",
+            "kernel_size": 1
+        },
+        {
+            "type": "conv",
+            "kernel_size": 3
+        },
+        {
+            "type": "conv",
+            "kernel_size": 5
+        },
+        {
+            "type": "separableconv",
+            "kernel_size": 3
+        },
+        {
+            "type": "separableconv",
+            "kernel_size": 5
+        },
+        {
+            "type": "separableconv",
+            "kernel_size": 7
+        },
+        {
+            "type": "none"
+        }
+    ]
 }
