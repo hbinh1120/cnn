@@ -13,10 +13,9 @@ class ParticleSwarm:
         self.particles = []
 
     def add_particles(self, num_particles):
-        initializer = Initializers()
         for _ in range(num_particles):
             particle = Particle()
-            particle.initialize(initializer)
+            particle.initialize()
             self.particles.append(particle)
 
     def save_g_best(self, model_num):
@@ -25,8 +24,13 @@ class ParticleSwarm:
         with open('save/g_best.txt', 'w') as f:
             f.write(json.dumps(self.g_best.cnn_layers) + '\n')
             f.write(json.dumps(self.g_best.fc_layers) + '\n')
-        with open('save/log.txt', 'a') as f:
-            f.write(str(model_num) + ' ' + str(self.g_best_loss) + '\n')
+            f.write(json.dumps(self.g_best_loss) + '\n')
+        if model_num == 1:
+            with open('save/log.txt', 'w') as f:
+                f.write(str(model_num) + ' ' + str(self.g_best_loss) + '\n')
+        else:
+            with open('save/log.txt', 'a') as f:
+                f.write(str(model_num) + ' ' + str(self.g_best_loss) + '\n')
 
     def load(self):
         if os.path.exists('save'):
@@ -75,6 +79,7 @@ class ParticleSwarm:
                 particle.update(self.g_best, w, cg)
 
 class Particle:
+    initializer = Initializers()
     def __init__(self) -> None:
         self.p_best = self
         self.p_best_loss = float('inf')
@@ -82,9 +87,8 @@ class Particle:
         self.cnn_layers = [] #both convolution layers and pooling layers
         self.fc_layers = [] #dense layers
 
-    def initialize(self, initializer=Initializers()):
-        self.initializer = initializer
-        self.cnn_layers, self.fc_layers = self.initializer.sequential()
+    def initialize(self):
+        self.cnn_layers, self.fc_layers = Particle.initializer.sequential()
 
     def save(self, filename):
         if not os.path.exists('save'):
@@ -94,6 +98,7 @@ class Particle:
             f.write(json.dumps(self.fc_layers) + '\n')
             f.write(json.dumps(self.p_best.cnn_layers) + '\n')
             f.write(json.dumps(self.p_best.fc_layers) + '\n')
+            f.write(json.dumps(self.p_best_loss) + '\n')
 
     def compile(self, tpu_strategy):
         #returns tf.keras.models.Sequential object
@@ -107,6 +112,7 @@ class Particle:
                 layers.append(tf.keras.layers.Conv2D(layer['filters'], layer['kernel_size'], padding='same'))
                 layers.append(tf.keras.layers.BatchNormalization())
                 layers.append(tf.keras.layers.Activation(tf.keras.activations.relu))
+                layers.append(tf.keras.layers.SpatialDropout2D(0.2))
             elif layer['type'] == 'maxpool':
                 layers.append(tf.keras.layers.MaxPooling2D(padding='same'))
             elif layer['type'] == 'avgpool':
@@ -119,13 +125,14 @@ class Particle:
                 layers.append(tf.keras.layers.Dense(layer['units']))
                 layers.append(tf.keras.layers.BatchNormalization())
                 layers.append(tf.keras.layers.Activation(tf.keras.activations.relu))
+                layers.append(tf.keras.layers.Dropout(0.5))
 
         #output layer, 10 outputs
         layers.append(tf.keras.layers.Dense(10, activation='softmax'))
 
         with tpu_strategy.scope():
             model = tf.keras.models.Sequential(layers)
-            model.compile(optimizer='adam', loss=tf.keras.losses.SparseCategoricalCrossentropy(), metrics=['accuracy'])
+            model.compile(optimizer=tf.keras.optimizers.SGD(momentum=0.9), loss=tf.keras.losses.SparseCategoricalCrossentropy(), metrics=['accuracy'])
         return model
 
     def update(self, g_best, w, cg):
