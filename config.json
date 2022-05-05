@@ -6,7 +6,6 @@
     "num_nodes": 5,
 
     "layers": ["conv", "maxpool", "avgpool", "fc"],
-    "combine_methods": ["add"],
 
     "transitions": {
         "conv": [5, 1, 1, 0],
@@ -32,15 +31,15 @@
     "operations": [
         {
             "type": "conv",
-            "kernel_size": 1
-        },
-        {
-            "type": "conv",
             "kernel_size": 3
         },
         {
             "type": "conv",
             "kernel_size": 5
+        },
+        {
+            "type": "conv",
+            "kernel_size": 7
         },
         {
             "type": "separableconv",
@@ -56,6 +55,16 @@
         },
         {
             "type": "none"
+        },
+        {
+            "type": "maxpool",
+            "pool_size": 3,
+            "stride": 1
+        },
+        {
+            "type": "averagepool",
+            "pool_size": 3,
+            "stride": 1
         }
     ]
 }
