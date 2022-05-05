@@ -42,45 +42,6 @@ class Initializers:
 
         return cnn_layers, fc_layers
 
-    def cell(self):
-        '''
-        creates a cell (a small model) with skip connections \n
-        returns a list of nodes and their connection with eachother
-        '''
-        import random
-        num_nodes = random.randint(self.config['min_nodes_in_cell'], self.config['max_nodes_in_cell'])
-        nodes = []
-
-        #each node takes 2 of previous nodes as inputs
-        for i in range(num_nodes):
-            edges = []
-            for j in range(i + 2):
-                for operation in self.config['operations']:
-                    has_param = False
-                    for param in self.config['config'][operation]:
-                        has_param = True
-                        for choice in self.config['config'][operation][param]:
-                            edge = {}
-                            edge['from_node'] = j
-                            edge['type'] = operation
-                            edge[param] = choice
-                            edges.append(edge)
-                    if not has_param:
-                        edge = {}
-                        edge['from_node'] = j
-                        edge['type'] = operation
-                        edges.append(edge)
-
-            node = {}
-            node['edges'] = edges
-            node['graph'] = [0] * len(edges)
-            for i in random.sample(range(len(edges)), 2):
-                node['graph'][i] = 1
-            node['combine_method'] = random.choice(self.config['combine_methods'])
-            nodes.append(node)
-
-        return nodes
-
     def cell_graph(self):
         '''
         returns a list of all possible connections in a cell \n
